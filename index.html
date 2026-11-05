@@ -47,6 +47,7 @@
       <div class="flex items-center gap-3">
         <button 
           type="button"
+          id="btn-open-ai-chat"
           onclick="toggleAiDirectorChat()"
           class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 font-bold text-xs shadow-lg transition-all cursor-pointer"
         >
@@ -135,7 +136,7 @@
         <textarea 
           id="story-input"
           rows="5"
-          oninput="syncStoryToPipeline()"
+          oninput="onStoryInputChanged()"
           placeholder="Apni kahani yahan likhein ya AI Director se chat karein..."
           class="w-full bg-[#060810] text-slate-100 rounded-xl p-4 text-sm border border-white/10 focus:outline-none focus:border-fuchsia-500 leading-relaxed font-sans"
         >रसोई में सब्जी काटते वक्त अचानक चाकू से उंगली में कट लग जाता है।
@@ -169,7 +170,7 @@
           <span class="text-fuchsia-400">👥</span> Step 2: Character Casting (Story Ke Sath Live Sync)
         </h2>
         <p class="text-xs text-slate-400 mt-0.5">
-          Jo naam aap yahan denge, wahi Screenplay (Step 4) aur Final Video (Step 5) me direct display honge:
+          Jo naam aap yahan likhenge, wahi Step 4 ke dialogues aur Step 5 ki video me live synchronize rahenge:
         </p>
       </div>
 
@@ -186,7 +187,7 @@
               type="text" 
               id="char-name-1" 
               value="Dr. Ritu" 
-              oninput="syncStoryToPipeline()"
+              oninput="onCharacterNameChanged()"
               class="w-full bg-black/60 border border-cyan-500/40 rounded-lg px-3 py-2 text-xs text-white font-bold focus:outline-none"
             />
           </div>
@@ -205,7 +206,7 @@
               type="text" 
               id="char-name-2" 
               value="Pooja (Patient)" 
-              oninput="syncStoryToPipeline()"
+              oninput="onCharacterNameChanged()"
               class="w-full bg-black/60 border border-fuchsia-500/40 rounded-lg px-3 py-2 text-xs text-white font-bold focus:outline-none"
             />
           </div>
@@ -224,7 +225,7 @@
               type="text" 
               id="char-name-3" 
               value="Family Members" 
-              oninput="syncStoryToPipeline()"
+              oninput="onCharacterNameChanged()"
               class="w-full bg-black/60 border border-amber-500/40 rounded-lg px-3 py-2 text-xs text-white font-bold focus:outline-none"
             />
           </div>
@@ -285,7 +286,7 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="text-xs text-slate-300 font-semibold block mb-1.5">Anime Production Style</label>
-          <select id="art-style-select" onchange="syncStoryToPipeline()" class="w-full bg-[#060810] border border-white/10 rounded-xl px-4 py-3 text-xs text-white">
+          <select id="art-style-select" class="w-full bg-[#060810] border border-white/10 rounded-xl px-4 py-3 text-xs text-white">
             <option value="Makoto Shinkai style, breathtaking sky, cinematic anime movie still" selected>Makoto Shinkai (Your Name / Weathering With You Style)</option>
             <option value="Ufotable cinematic style, dramatic lighting, dynamic anime 8k">Ufotable Cinematic (Demon Slayer / Action)</option>
             <option value="Studio Ghibli style, hand-painted aesthetic, nostalgic feel">Studio Ghibli (Hand-Crafted Art Style)</option>
@@ -578,6 +579,7 @@
     let isRendering = false;
     let finalVideoBlobUrl = null;
     let dynamicTheme = 'firstaid';
+    let lastChatGeneratedStory = '';
 
     function formatTime(sec) {
       const m = Math.floor(sec / 60);
@@ -615,10 +617,12 @@
             : 'py-3 px-3 rounded-xl flex flex-col items-center justify-center text-center gap-1 transition-all border bg-transparent text-slate-400 border-transparent hover:bg-white/5 hover:text-white cursor-pointer';
         }
       }
-      window.scrollTo({ top: 80, behavior: 'smooth' });
+      try {
+        window.scrollTo({ top: 80, behavior: 'smooth' });
+      } catch (e) {}
     }
 
-    // Story Preset Switcher
+    // Preset Loader
     function loadStoryPreset(presetKey) {
       const storyInput = document.getElementById('story-input');
       if (!storyInput) return;
@@ -639,12 +643,49 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
 विमान में 174 यात्री गलियारे में सामान रखकर अपनी सीटों पर बातचीत कर रहे हैं।
 कॉकपिट में कैप्टन अर्जुन और को-पायलट सारा रनवे 30R पर थ्रॉटल आगे बढ़ाते हैं और विमान बादलों को चीरता हुआ उड़ान भरता है।`;
       }
-      syncStoryToPipeline();
+      syncStoryToPipeline(true);
       showToast(`Preset "${presetKey}" Loaded & Synced!`, 'success');
     }
 
+    function onStoryInputChanged() {
+      syncStoryToPipeline(true);
+    }
+
+    // Step 2 User Name Edit Handler - Does NOT overwrite names!
+    function onCharacterNameChanged() {
+      syncCharacterNamesToScreenplay();
+    }
+
+    function syncCharacterNamesToScreenplay() {
+      const c1 = document.getElementById('char-name-1')?.value.trim() || 'Character 1';
+      const c2 = document.getElementById('char-name-2')?.value.trim() || 'Character 2';
+      const c3 = document.getElementById('char-name-3')?.value.trim() || 'Observers';
+
+      const d1 = document.getElementById('shot-1-dialogue');
+      const d2 = document.getElementById('shot-2-dialogue');
+      const d3 = document.getElementById('shot-3-dialogue');
+
+      if (dynamicTheme === 'firstaid') {
+        if (d1) d1.textContent = `${c2}: "अरे ध्यान हटने से चाकू से उंगली कट गई!"`;
+        if (d2) d2.textContent = `${c1}: "घबराओ मत, पहले इसे साफ पानी से धोकर डेटॉल लगाओ."`;
+        if (d3) d3.textContent = `${c1}: "बैंडेज लग गई है, अब घाव पूरी तरह सुरक्षित है."`;
+      } else if (dynamicTheme === 'police') {
+        if (d1) d1.textContent = `${c1}: "कंट्रोल रूम, सस्पेक्ट गाड़ी टोल की तरफ भाग रही है!"`;
+        if (d2) d2.textContent = `${c3}: "नाकाबंदी तैयार है, गाड़ी को आगे नहीं जाने देंगे!"`;
+        if (d3) d3.textContent = `${c1}: "गाड़ी से बाहर आओ और हाथ ऊपर करो!"`;
+      } else if (dynamicTheme === 'space') {
+        if (d1) d1.textContent = `${c3}: "T-minus 10, 9, 8... Boosters active!"`;
+        if (d2) d2.textContent = `${c1}: "लिफ्टऑफ कन्फर्म, रॉकेट बादलों को पार कर रहा है!"`;
+        if (d3) d3.textContent = `${c2}: "गगनयान पृथ्वी की कक्षा में स्थापित, मिशन सफल!"`;
+      } else {
+        if (d1) d1.textContent = `${c3}: "Bhaiya thoda side dena, cabin luggage rakhna hai."`;
+        if (d2) d2.textContent = `${c2}: "Cabin secure. All doors armed for departure."`;
+        if (d3) d3.textContent = `${c1}: "Thrust levers set on Runway 30R. V1... Rotate!"`;
+      }
+    }
+
     // Pipeline Synchronization
-    function syncStoryToPipeline() {
+    function syncStoryToPipeline(forceDefaultChars = false) {
       const storyEl = document.getElementById('story-input');
       if (!storyEl) return;
       const storyText = storyEl.value.toLowerCase();
@@ -653,65 +694,50 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
       if (storyText.includes('कट') || storyText.includes('चाकू') || storyText.includes('बैंडेज') || storyText.includes('first aid') || storyText.includes('डॉक्टर') || storyText.includes('hospital')) {
         dynamicTheme = 'firstaid';
         if (detectedLabel) detectedLabel.textContent = 'Detected Story Concept: Medical First-Aid Tutorial (Auto-Synced)';
-        setSafeCharValues('Dr. Ritu', '🧑‍⚕️', 'Pooja (Patient)', '👩', 'Family Members', '👥');
-        setSafeScreenplay(
-          'Scene 1: Kitchen Knife Cut Incident',
-          'सब्जी काटते वक्त उंगली में कट लगना और खून निकलना।',
-          'Pooja: "अरे ध्यान हटने से चाकू से उंगली कट गई!"',
-          'Scene 2: Cleaning & Antiseptic Care',
-          'घाव को साफ पानी से धोकर सुखाना और एंटीसेप्टिक लगाना।',
-          'Dr. Ritu: "घबराओ मत, पहले इसे साफ पानी से धोकर डेटॉल लगाओ."',
-          'Scene 3: Waterproof Bandage Secure',
-          'उंगली पर सुरक्षित बैंडेज लगाना और आराम मिलना।',
-          'Dr. Ritu: "बैंडेज लग गई है, अब घाव पूरी तरह सुरक्षित है."'
+        if (forceDefaultChars) {
+          setSafeCharValues('Dr. Ritu', '🧑‍⚕️', 'Pooja (Patient)', '👩', 'Family Members', '👥');
+        }
+        setSafeScreenplayHeadings(
+          'Scene 1: Kitchen Knife Cut Incident', 'सब्जी काटते वक्त उंगली में कट लगना और खून निकलना।',
+          'Scene 2: Cleaning & Antiseptic Care', 'घाव को साफ पानी से धोकर सुखाना और एंटीसेप्टिक लगाना।',
+          'Scene 3: Waterproof Bandage Secure', 'उंगली पर सुरक्षित बैंडेज लगाना और आराम मिलना।'
         );
       } else if (storyText.includes('पुलिस') || storyText.includes('कार') || storyText.includes('चेस') || storyText.includes('police') || storyText.includes('chase')) {
         dynamicTheme = 'police';
         if (detectedLabel) detectedLabel.textContent = 'Detected Story Concept: Highway Police Patrol Chase (Auto-Synced)';
-        setSafeCharValues('Inspector Vikram', '👮‍♂️', 'Rider Aryan', '🏎️', 'Patrol Backup Team', '🚓');
-        setSafeScreenplay(
-          'Scene 1: High-Speed Pursuit Begins',
-          'एक्सप्रेसवे पर सायरन और सायरन लाइट के साथ तेज रफ्तार चेस।',
-          'Inspector Vikram: "कंट्रोल रूम, सस्पेक्ट गाड़ी टोल की तरफ भाग रही है!"',
-          'Scene 2: Tactical Radio Coordination',
-          'वायरलेस पर आगे के बैरिकेड को अलर्ट करना।',
-          'Patrol Team: "नाकाबंदी तैयार है, गाड़ी को आगे नहीं जाने देंगे!"',
-          'Scene 3: Final Roadblock Apprehension',
-          'टोल प्लाजा पर कार रोककर अपराधी को सरेंडर कराना।',
-          'Inspector Vikram: "गाड़ी से बाहर आओ और हाथ ऊपर करो!"'
+        if (forceDefaultChars) {
+          setSafeCharValues('Inspector Vikram', '👮‍♂️', 'Rider Aryan', '🏎️', 'Patrol Backup Team', '🚓');
+        }
+        setSafeScreenplayHeadings(
+          'Scene 1: High-Speed Pursuit Begins', 'एक्सप्रेसवे पर सायरन और सायरन लाइट के साथ तेज रफ्तार चेस।',
+          'Scene 2: Tactical Radio Coordination', 'वायरलेस पर आगे के बैरिकेड को अलर्ट करना।',
+          'Scene 3: Final Roadblock Apprehension', 'टोल प्लाजा पर कार रोककर अपराधी को सरेंडर कराना।'
         );
       } else if (storyText.includes('रॉकेट') || storyText.includes('अंतरिक्ष') || storyText.includes('space') || storyText.includes('इसरो') || storyText.includes('rocket')) {
         dynamicTheme = 'space';
         if (detectedLabel) detectedLabel.textContent = 'Detected Story Concept: ISRO Space Mission Launch (Auto-Synced)';
-        setSafeCharValues('Commander Kabir', '👨‍🚀', 'Pilot Riya', '👩‍🚀', 'Mission Control Center', '🛰️');
-        setSafeScreenplay(
-          'Scene 1: Final T-Minus Countdown',
-          'मिशन कंट्रोल में कंप्यूटर स्क्रीन और काउंटडाउन।',
-          'Mission Control: "T-minus 10, 9, 8... Boosters active!"',
-          'Scene 2: Main Engine Ignition',
-          'विशाल रॉकेट आग और धुएं के बादलों के साथ ऊपर उठता है।',
-          'Commander Kabir: "लिफ्टऑफ कन्फर्म, रॉकेट बादलों को पार कर रहा है!"',
-          'Scene 3: Orbit Insertion & Tricolor Flag',
-          'अंतरिक्ष में पहुंचना और पृथ्वी का सुंदर दृश्य।',
-          'Pilot Riya: "गगनयान पृथ्वी की कक्षा में स्थापित, मिशन सफल!"'
+        if (forceDefaultChars) {
+          setSafeCharValues('Commander Kabir', '👨‍🚀', 'Pilot Riya', '👩‍🚀', 'Mission Control Center', '🛰️');
+        }
+        setSafeScreenplayHeadings(
+          'Scene 1: Final T-Minus Countdown', 'मिशन कंट्रोल में कंप्यूटर स्क्रीन और काउंटडाउन।',
+          'Scene 2: Main Engine Ignition', 'विशाल रॉकेट आग और धुएं के बादलों के साथ ऊपर उठता है।',
+          'Scene 3: Orbit Insertion & Tricolor Flag', 'अंतरिक्ष में पहुंचना और पृथ्वी का सुंदर दृश्य।'
         );
       } else {
         dynamicTheme = 'aviation';
         if (detectedLabel) detectedLabel.textContent = 'Detected Story Concept: Commercial Aviation Flight Deck (Auto-Synced)';
-        setSafeCharValues('Captain Arjun', '👨‍✈️', 'First Officer Sarah', '👩‍✈️', '174 Airplane Passengers', '👥');
-        setSafeScreenplay(
-          'Scene 1: Passengers Boarding Cabin',
-          '174 यात्री सामान रखकर अपनी सीटों पर बातचीत कर रहे हैं।',
-          'Passenger: "Bhaiya thoda side dena, cabin luggage rakhna hai."',
-          'Scene 2: Cabin Settling & Announcements',
-          'यात्री फोन फ्लाइट मोड पर डाल रहे हैं और सीटबेल्ट बांध रहे हैं।',
-          'Sarah: "Cabin secure. All doors armed for departure."',
-          'Scene 3: Runway 30R Full Thrust Takeoff',
-          'कॉकपिट में थ्रॉटल आगे बढ़ाना और विमान का बादलों में उड़ान भरना।',
-          'Captain Arjun: "Thrust levers set on Runway 30R. V1... Rotate!"'
+        if (forceDefaultChars) {
+          setSafeCharValues('Captain Arjun', '👨‍✈️', 'First Officer Sarah', '👩‍✈️', '174 Airplane Passengers', '👥');
+        }
+        setSafeScreenplayHeadings(
+          'Scene 1: Passengers Boarding Cabin', '174 यात्री सामान रखकर अपनी सीटों पर बातचीत कर रहे हैं।',
+          'Scene 2: Cabin Settling & Announcements', 'यात्री फोन फ्लाइट मोड पर डाल रहे हैं और सीटबेल्ट बांध रहे हैं।',
+          'Scene 3: Runway 30R Full Thrust Takeoff', 'कॉकपिट में थ्रॉटल आगे बढ़ाना और विमान का बादलों में उड़ान भरना।'
         );
       }
 
+      syncCharacterNamesToScreenplay();
       updateTimingLabels();
     }
 
@@ -731,18 +757,13 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
       if (ic3) ic3.textContent = i3;
     }
 
-    function setSafeScreenplay(h1, d1, dial1, h2, d2, dial2, h3, d3, dial3) {
+    function setSafeScreenplayHeadings(h1, d1, h2, d2, h3, d3) {
       const eH1 = document.getElementById('shot-1-heading'); if (eH1) eH1.textContent = h1;
       const eD1 = document.getElementById('shot-1-desc'); if (eD1) eD1.textContent = d1;
-      const eDial1 = document.getElementById('shot-1-dialogue'); if (eDial1) eDial1.textContent = dial1;
-
       const eH2 = document.getElementById('shot-2-heading'); if (eH2) eH2.textContent = h2;
       const eD2 = document.getElementById('shot-2-desc'); if (eD2) eD2.textContent = d2;
-      const eDial2 = document.getElementById('shot-2-dialogue'); if (eDial2) eDial2.textContent = dial2;
-
       const eH3 = document.getElementById('shot-3-heading'); if (eH3) eH3.textContent = h3;
       const eD3 = document.getElementById('shot-3-desc'); if (eD3) eD3.textContent = d3;
-      const eDial3 = document.getElementById('shot-3-dialogue'); if (eDial3) eDial3.textContent = dial3;
     }
 
     function updateTimingLabels() {
@@ -994,7 +1015,7 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
       ctx.fill();
 
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillRect(-45, 95, 90, 20);
+      ctx.fillRect(-50, 95, 100, 20);
       ctx.fillStyle = '#38bdf8';
       ctx.font = 'bold 9px Plus Jakarta Sans, sans-serif';
       ctx.textAlign = 'center';
@@ -1189,14 +1210,14 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
       if (!text) return;
 
       const container = document.getElementById('director-chat-messages');
-      // Append user query
+      if (!container) return;
+
       const uMsg = document.createElement('div');
       uMsg.className = 'bg-cyan-950/60 p-2.5 rounded-xl border border-cyan-500/40 text-white font-medium text-right self-end';
       uMsg.textContent = text;
       container.appendChild(uMsg);
       input.value = '';
 
-      // AI Interactive Reply with direct Inject Button
       setTimeout(() => {
         const aiMsg = document.createElement('div');
         aiMsg.className = 'bg-[#080b12] p-3 rounded-xl border border-white/10 text-slate-300 leading-relaxed';
@@ -1217,9 +1238,11 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
           replyTitle = '🚀 ISRO Space Mission Launch Script:';
           generatedStory = `इसरो सतीश धवन अंतरिक्ष केंद्र से मिशन गगनयान का काउंटडाउन शुरू होता है। T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट होते हैं और विशाल रॉकेट नारंगी लपटों के साथ अंतरिक्ष की ओर उड़ान भरता है। कमांडर कबीर और पायलट रिया अंतरिक्ष में भारत का तिरंगा लहराते हैं।`;
         } else {
-          replyTitle = `🎬 Custom Action Script (${text}):`;
+          replyTitle = `🎬 Custom Action Script:`;
           generatedStory = `${text} के साथ एक रोमांचक दृश्य शुरू होता है। मुख्य पात्र स्थिति को संभालते हुए आगे बढ़ते हैं और पूरी टीम मिलकर लक्ष्य हासिल करती है।`;
         }
+
+        lastChatGeneratedStory = generatedStory;
 
         aiMsg.innerHTML = `
           <div class="text-cyan-300 font-bold mb-1">${replyTitle}</div>
@@ -1228,7 +1251,7 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
             <span class="text-[10px] text-emerald-400 font-mono">✓ Ready to use</span>
             <button 
               type="button"
-              onclick="injectChatStoryToStep1('${encodeURIComponent(generatedStory)}')" 
+              onclick="applyLastChatStory()" 
               class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md cursor-pointer"
             >
               ✨ Apply Story to Step 1
@@ -1238,15 +1261,15 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
 
         container.appendChild(aiMsg);
         container.scrollTop = container.scrollHeight;
-      }, 500);
+      }, 400);
     }
 
-    function injectChatStoryToStep1(encodedStory) {
-      const story = decodeURIComponent(encodedStory);
+    function applyLastChatStory() {
+      if (!lastChatGeneratedStory) return;
       const storyInput = document.getElementById('story-input');
       if (storyInput) {
-        storyInput.value = story;
-        syncStoryToPipeline();
+        storyInput.value = lastChatGeneratedStory;
+        syncStoryToPipeline(true);
       }
       toggleAiDirectorChat();
       goToStep(1);
@@ -1290,7 +1313,7 @@ T-minus 10, 9, 8... मुख्य बूस्टर इग्नाइट ह
 
     // ==================== INIT ====================
     window.addEventListener('DOMContentLoaded', () => {
-      syncStoryToPipeline();
+      syncStoryToPipeline(true);
     });
   </script>
 </body>
